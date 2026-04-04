@@ -13,13 +13,12 @@ import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 
 function StatCard({
-  title, value, subtitle, icon: Icon, trend,
+  title, value, subtitle, icon: Icon,
 }: {
   title: string
   value: string | number
   subtitle?: string
   icon: any
-  trend?: 'up' | 'down' | 'neutral'
 }) {
   return (
     <Card>

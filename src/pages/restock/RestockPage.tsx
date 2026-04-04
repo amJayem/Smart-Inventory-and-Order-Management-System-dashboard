@@ -1,10 +1,9 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { AlertTriangle, CheckCircle } from 'lucide-react'
+import { CheckCircle } from 'lucide-react'
 import { toast } from 'sonner'
 import api from '@/api/client'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel,
@@ -136,7 +135,7 @@ export default function RestockPage() {
       <div className="flex items-center justify-between text-xs text-muted-foreground">
         <div className="flex items-center gap-2">
           <span>Rows per page:</span>
-          <Select value={String(limit)} onValueChange={(v) => { setLimit(+v); setPage(1) }}>
+          <Select value={String(limit)} onValueChange={(v) => { setLimit(+(v ?? limit)); setPage(1) }}>
             <SelectTrigger className="h-7 w-16 text-xs"><SelectValue /></SelectTrigger>
             <SelectContent>
               {[5, 10, 20, 50].map((n) => <SelectItem key={n} value={String(n)}>{n}</SelectItem>)}

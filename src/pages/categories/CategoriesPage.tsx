@@ -134,10 +134,8 @@ export default function CategoriesPage() {
                 {isAdmin && (
                   <td className="px-4 py-3">
                     <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon" className="h-7 w-7">
-                          <MoreHorizontal className="w-4 h-4" />
-                        </Button>
+                      <DropdownMenuTrigger className="h-7 w-7 inline-flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors">
+                        <MoreHorizontal className="w-4 h-4" />
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end" className="w-32">
                         <DropdownMenuItem onClick={() => openEdit(cat)}>
@@ -164,7 +162,7 @@ export default function CategoriesPage() {
         <div className="flex items-center justify-between text-xs text-muted-foreground">
           <div className="flex items-center gap-2">
             <span>Rows per page:</span>
-            <Select value={String(limit)} onValueChange={(v) => { setLimit(+v); setPage(1) }}>
+            <Select value={String(limit)} onValueChange={(v) => { setLimit(+(v ?? limit)); setPage(1) }}>
               <SelectTrigger className="h-7 w-16 text-xs"><SelectValue /></SelectTrigger>
               <SelectContent>
                 {[5, 10, 20, 50].map((n) => <SelectItem key={n} value={String(n)}>{n}</SelectItem>)}

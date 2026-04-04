@@ -10,7 +10,6 @@ import { useAuthStore } from '@/store/auth.store'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
@@ -72,7 +71,7 @@ export default function ProductsPage() {
   })
 
   const { control, register, handleSubmit, reset, formState: { errors, isSubmitting } } = useForm<FormData>({
-    resolver: zodResolver(schema),
+    resolver: zodResolver(schema) as any,
     defaultValues: { stock: 0, minStockThreshold: 5, price: 0 },
   })
 
@@ -147,7 +146,7 @@ export default function ProductsPage() {
             onChange={(e) => { setSearch(e.target.value); setPage(1) }}
           />
         </div>
-        <Select value={categoryFilter} onValueChange={(v) => { setCategoryFilter(v); setPage(1) }}>
+        <Select value={categoryFilter} onValueChange={(v) => { setCategoryFilter(v ?? 'all'); setPage(1) }}>
           <SelectTrigger className="h-8 w-40 text-sm"><SelectValue placeholder="All categories" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All categories</SelectItem>
@@ -203,10 +202,8 @@ export default function ProductsPage() {
                 </td>
                 <td className="px-4 py-3">
                   <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="icon" className="h-7 w-7">
-                        <MoreHorizontal className="w-4 h-4" />
-                      </Button>
+                    <DropdownMenuTrigger className="h-7 w-7 inline-flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors">
+                      <MoreHorizontal className="w-4 h-4" />
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end" className="w-36">
                       <DropdownMenuItem onClick={() => { setRestockTarget(p); setRestockQty(10) }}>
@@ -239,7 +236,7 @@ export default function ProductsPage() {
       <div className="flex items-center justify-between text-xs text-muted-foreground">
         <div className="flex items-center gap-2">
           <span>Rows per page:</span>
-          <Select value={String(limit)} onValueChange={(v) => { setLimit(+v); setPage(1) }}>
+          <Select value={String(limit)} onValueChange={(v) => { setLimit(+(v ?? limit)); setPage(1) }}>
             <SelectTrigger className="h-7 w-16 text-xs"><SelectValue /></SelectTrigger>
             <SelectContent>
               {[5, 10, 20, 50].map((n) => <SelectItem key={n} value={String(n)}>{n}</SelectItem>)}
@@ -261,7 +258,7 @@ export default function ProductsPage() {
           <DialogHeader>
             <DialogTitle>{editTarget ? 'Edit Product' : 'New Product'}</DialogTitle>
           </DialogHeader>
-          <form onSubmit={handleSubmit((d) => saveMutation.mutate(d))} className="space-y-4">
+          <form onSubmit={handleSubmit((d) => saveMutation.mutate(d as FormData))} className="space-y-4">
             <div className="space-y-1.5">
               <Label>Name</Label>
               <Input placeholder="Product name" {...register('name')} />

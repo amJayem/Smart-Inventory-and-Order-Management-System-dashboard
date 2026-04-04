@@ -1,8 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import {
-  Plus, Search, MoreHorizontal, ShoppingCart, ChevronDown, X, FileText,
-} from 'lucide-react'
+import { Plus, Search, MoreHorizontal, ShoppingCart, X, FileText } from 'lucide-react'
 import { useForm, useFieldArray, Controller } from 'react-hook-form'
 import { z } from 'zod'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -12,7 +10,6 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
@@ -30,7 +27,6 @@ import {
 } from '@/components/ui/select'
 
 const ORDER_STATUSES = ['PENDING', 'CONFIRMED', 'SHIPPED', 'DELIVERED', 'CANCELLED'] as const
-type OrderStatus = typeof ORDER_STATUSES[number]
 
 const statusColors: Record<string, string> = {
   PENDING: 'bg-amber-500/10 text-amber-600 border-amber-500/20',
@@ -57,7 +53,7 @@ export default function OrdersPage() {
   const [detailOrder, setDetailOrder] = useState<any>(null)
   const [cancelTarget, setCancelTarget] = useState<any>(null)
   const [search, setSearch] = useState('')
-  const [statusFilter, setStatusFilter] = useState<string>('all')
+  const [statusFilter, setStatusFilter] = useState('all')
   const [page, setPage] = useState(1)
   const [limit, setLimit] = useState(10)
 
@@ -75,7 +71,7 @@ export default function OrdersPage() {
   })
 
   const { control, register, handleSubmit, reset, watch, formState: { errors, isSubmitting } } = useForm<FormData>({
-    resolver: zodResolver(schema),
+    resolver: zodResolver(schema) as any,
     defaultValues: { customerName: '', notes: '', items: [{ productId: '', quantity: 1 }] },
   })
   const { fields, append, remove } = useFieldArray({ control, name: 'items' })
@@ -114,37 +110,32 @@ export default function OrdersPage() {
     onError: (e: any) => toast.error(e.response?.data?.message || 'Cannot cancel order'),
   })
 
-  const downloadInvoice = async (order: any) => {
-    const content = generateInvoiceText(order)
-    const blob = new Blob([content], { type: 'text/plain' })
+  const downloadInvoice = (order: any) => {
+    const lines = [
+      'INVOICE',
+      '='.repeat(40),
+      `Order: ${order.orderNumber}`,
+      `Customer: ${order.customerName}`,
+      `Status: ${order.status}`,
+      `Date: ${new Date(order.createdAt).toLocaleDateString()}`,
+      '',
+      'ITEMS',
+      '='.repeat(40),
+      ...order.items.map((i: any) =>
+        `${i.product.name} x${i.quantity}  @$${Number(i.unitPrice).toFixed(2)} = $${(i.quantity * Number(i.unitPrice)).toFixed(2)}`
+      ),
+      '',
+      '='.repeat(40),
+      `TOTAL: $${Number(order.totalPrice).toFixed(2)}`,
+      order.notes ? `\nNotes: ${order.notes}` : '',
+    ]
+    const blob = new Blob([lines.join('\n')], { type: 'text/plain' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
     a.download = `invoice-${order.orderNumber}.txt`
     a.click()
     URL.revokeObjectURL(url)
-  }
-
-  const generateInvoiceText = (order: any) => {
-    const lines = [
-      `INVOICE`,
-      `${'='.repeat(40)}`,
-      `Order: ${order.orderNumber}`,
-      `Customer: ${order.customerName}`,
-      `Status: ${order.status}`,
-      `Date: ${new Date(order.createdAt).toLocaleDateString()}`,
-      ``,
-      `ITEMS`,
-      `${'='.repeat(40)}`,
-      ...order.items.map((i: any) =>
-        `${i.product.name} x${i.quantity}  @$${Number(i.unitPrice).toFixed(2)} = $${(i.quantity * Number(i.unitPrice)).toFixed(2)}`
-      ),
-      ``,
-      `${'='.repeat(40)}`,
-      `TOTAL: $${Number(order.totalPrice).toFixed(2)}`,
-      order.notes ? `\nNotes: ${order.notes}` : '',
-    ]
-    return lines.join('\n')
   }
 
   const calcTotal = () => {
@@ -159,7 +150,7 @@ export default function OrdersPage() {
   const totalPages = data?.totalPages || 1
 
   const nextStatuses: Record<string, string[]> = {
-    PENDING: ['CONFIRMED', 'CANCELLED'],
+    PENDING: ['CONFIRMED'],
     CONFIRMED: ['SHIPPED'],
     SHIPPED: ['DELIVERED'],
   }
@@ -187,7 +178,7 @@ export default function OrdersPage() {
             onChange={(e) => { setSearch(e.target.value); setPage(1) }}
           />
         </div>
-        <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v); setPage(1) }}>
+        <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v ?? 'all'); setPage(1) }}>
           <SelectTrigger className="h-8 w-36 text-sm"><SelectValue placeholder="All statuses" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All statuses</SelectItem>
@@ -242,17 +233,15 @@ export default function OrdersPage() {
                 </td>
                 <td className="px-4 py-3">
                   <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="icon" className="h-7 w-7">
-                        <MoreHorizontal className="w-4 h-4" />
-                      </Button>
+                    <DropdownMenuTrigger className="h-7 w-7 inline-flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors">
+                      <MoreHorizontal className="w-4 h-4" />
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end" className="w-40">
                       <DropdownMenuItem onClick={() => setDetailOrder(o)}>View Details</DropdownMenuItem>
                       <DropdownMenuItem onClick={() => downloadInvoice(o)}>
                         <FileText className="w-3.5 h-3.5 mr-2" /> Download Invoice
                       </DropdownMenuItem>
-                      {nextStatuses[o.status]?.filter((s) => s !== 'CANCELLED').map((s) => (
+                      {nextStatuses[o.status]?.map((s) => (
                         <DropdownMenuItem key={s} onClick={() => statusMutation.mutate({ id: o.id, status: s })}>
                           Mark as {s}
                         </DropdownMenuItem>
@@ -281,7 +270,7 @@ export default function OrdersPage() {
       <div className="flex items-center justify-between text-xs text-muted-foreground">
         <div className="flex items-center gap-2">
           <span>Rows per page:</span>
-          <Select value={String(limit)} onValueChange={(v) => { setLimit(+v); setPage(1) }}>
+          <Select value={String(limit)} onValueChange={(v) => { setLimit(+(v ?? limit)); setPage(1) }}>
             <SelectTrigger className="h-7 w-16 text-xs"><SelectValue /></SelectTrigger>
             <SelectContent>
               {[5, 10, 20, 50].map((n) => <SelectItem key={n} value={String(n)}>{n}</SelectItem>)}
@@ -303,7 +292,7 @@ export default function OrdersPage() {
           <DialogHeader>
             <DialogTitle>New Order</DialogTitle>
           </DialogHeader>
-          <form onSubmit={handleSubmit((d) => createMutation.mutate(d))} className="space-y-4">
+          <form onSubmit={handleSubmit((d) => createMutation.mutate(d as FormData))} className="space-y-4">
             <div className="space-y-1.5">
               <Label>Customer Name</Label>
               <Input placeholder="Customer full name" {...register('customerName')} />

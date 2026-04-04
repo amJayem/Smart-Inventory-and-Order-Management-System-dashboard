@@ -120,7 +120,7 @@ export default function UsersPage() {
       <div className="flex items-center justify-between text-xs text-muted-foreground">
         <div className="flex items-center gap-2">
           <span>Rows per page:</span>
-          <Select value={String(limit)} onValueChange={(v) => { setLimit(+v); setPage(1) }}>
+          <Select value={String(limit)} onValueChange={(v) => { setLimit(+(v ?? limit)); setPage(1) }}>
             <SelectTrigger className="h-7 w-16 text-xs"><SelectValue /></SelectTrigger>
             <SelectContent>
               {[5, 10, 20, 50].map((n) => <SelectItem key={n} value={String(n)}>{n}</SelectItem>)}

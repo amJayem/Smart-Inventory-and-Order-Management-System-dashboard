@@ -1,3 +1,3 @@
 #!/bin/bash
 git add .
-git commit -m "chore: install and configure Tailwind CSS v4 and shadcn/ui"
+git commit -m "feat: install core dependencies"

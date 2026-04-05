@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Search, MoreHorizontal, ShoppingCart, X, FileText } from 'lucide-react'
+import { Plus, Search, MoreHorizontal, ShoppingCart, X, FileText, Mail, Phone, MapPin, User } from 'lucide-react'
 import { useForm, useFieldArray, Controller } from 'react-hook-form'
 import { z } from 'zod'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -11,6 +11,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Separator } from '@/components/ui/separator'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog'
@@ -40,8 +41,12 @@ const itemSchema = z.object({
   productId: z.string().min(1, 'Select a product'),
   quantity: z.coerce.number().int().min(1, 'Min 1'),
 })
+
 const schema = z.object({
-  customerName: z.string().min(1, 'Customer name required'),
+  customerName: z.string().min(1, 'Customer name is required'),
+  customerEmail: z.string().email('Invalid email format').optional().or(z.literal('')),
+  customerPhone: z.string().optional(),
+  customerAddress: z.string().optional(),
   notes: z.string().optional(),
   items: z.array(itemSchema).min(1, 'Add at least one item'),
 })
@@ -70,19 +75,35 @@ export default function OrdersPage() {
     queryFn: () => api.get('/products', { params: { limit: 100 } }).then((r) => r.data.data),
   })
 
-  const { control, register, handleSubmit, reset, watch, formState: { errors, isSubmitting } } = useForm<FormData>({
+  const {
+    control, register, handleSubmit, reset, watch,
+    formState: { errors, isSubmitting },
+  } = useForm<FormData>({
     resolver: zodResolver(schema) as any,
-    defaultValues: { customerName: '', notes: '', items: [{ productId: '', quantity: 1 }] },
+    defaultValues: {
+      customerName: '', customerEmail: '', customerPhone: '',
+      customerAddress: '', notes: '',
+      items: [{ productId: '', quantity: 1 }],
+    },
   })
   const { fields, append, remove } = useFieldArray({ control, name: 'items' })
   const watchedItems = watch('items')
 
   const createMutation = useMutation({
-    mutationFn: (d: FormData) => api.post('/orders', d),
+    mutationFn: (d: FormData) => {
+      const payload = {
+        ...d,
+        customerEmail: d.customerEmail || undefined,
+        customerPhone: d.customerPhone || undefined,
+        customerAddress: d.customerAddress || undefined,
+        notes: d.notes || undefined,
+      }
+      return api.post('/orders', payload)
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['orders'] })
       qc.invalidateQueries({ queryKey: ['products'] })
-      toast.success('Order created')
+      toast.success('Order created successfully')
       setCreateOpen(false)
       reset()
     },
@@ -111,24 +132,38 @@ export default function OrdersPage() {
   })
 
   const downloadInvoice = (order: any) => {
+    const adminInfo = order.user
+      ? `${order.user.name}${order.user.email ? ` <${order.user.email}>` : ''}`
+      : '—'
     const lines = [
       'INVOICE',
-      '='.repeat(40),
-      `Order: ${order.orderNumber}`,
-      `Customer: ${order.customerName}`,
-      `Status: ${order.status}`,
-      `Date: ${new Date(order.createdAt).toLocaleDateString()}`,
+      '='.repeat(50),
+      `Order Number : ${order.orderNumber}`,
+      `Date         : ${new Date(order.createdAt).toLocaleDateString()}`,
+      `Status       : ${order.status}`,
       '',
-      'ITEMS',
-      '='.repeat(40),
+      'CUSTOMER INFORMATION',
+      '-'.repeat(50),
+      `Name         : ${order.customerName}`,
+      order.customerEmail ? `Email        : ${order.customerEmail}` : null,
+      order.customerPhone ? `Phone        : ${order.customerPhone}` : null,
+      order.customerAddress ? `Address      : ${order.customerAddress}` : null,
+      '',
+      'ORDER ITEMS',
+      '-'.repeat(50),
       ...order.items.map((i: any) =>
-        `${i.product.name} x${i.quantity}  @$${Number(i.unitPrice).toFixed(2)} = $${(i.quantity * Number(i.unitPrice)).toFixed(2)}`
+        `${i.product.name.padEnd(30)} x${i.quantity}  @$${Number(i.unitPrice).toFixed(2)}  = $${(i.quantity * Number(i.unitPrice)).toFixed(2)}`
       ),
       '',
-      '='.repeat(40),
+      '='.repeat(50),
       `TOTAL: $${Number(order.totalPrice).toFixed(2)}`,
-      order.notes ? `\nNotes: ${order.notes}` : '',
-    ]
+      '',
+      order.notes ? `Notes: ${order.notes}` : null,
+      '',
+      '-'.repeat(50),
+      `Processed by : ${adminInfo}`,
+    ].filter((l) => l !== null)
+
     const blob = new Blob([lines.join('\n')], { type: 'text/plain' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
@@ -221,7 +256,12 @@ export default function OrdersPage() {
                 <td className="px-4 py-3">
                   <span className="font-mono text-xs text-muted-foreground">{o.orderNumber}</span>
                 </td>
-                <td className="px-4 py-3 font-medium text-foreground">{o.customerName}</td>
+                <td className="px-4 py-3">
+                  <p className="font-medium text-foreground">{o.customerName}</p>
+                  {o.customerEmail && (
+                    <p className="text-xs text-muted-foreground">{o.customerEmail}</p>
+                  )}
+                </td>
                 <td className="px-4 py-3">
                   <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium border ${statusColors[o.status] || ''}`}>
                     {o.status}
@@ -236,7 +276,7 @@ export default function OrdersPage() {
                     <DropdownMenuTrigger className="h-7 w-7 inline-flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors">
                       <MoreHorizontal className="w-4 h-4" />
                     </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="w-40">
+                    <DropdownMenuContent align="end" className="w-44">
                       <DropdownMenuItem onClick={() => setDetailOrder(o)}>View Details</DropdownMenuItem>
                       <DropdownMenuItem onClick={() => downloadInvoice(o)}>
                         <FileText className="w-3.5 h-3.5 mr-2" /> Download Invoice
@@ -286,78 +326,126 @@ export default function OrdersPage() {
         </div>
       </div>
 
-      {/* Create Order Modal */}
+      {/* ─── Create Order Modal ─────────────────────────────────────── */}
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-2xl max-h-[92vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>New Order</DialogTitle>
           </DialogHeader>
-          <form onSubmit={handleSubmit((d) => createMutation.mutate(d as FormData))} className="space-y-4">
-            <div className="space-y-1.5">
-              <Label>Customer Name</Label>
-              <Input placeholder="Customer full name" {...register('customerName')} />
-              {errors.customerName && <p className="text-xs text-destructive">{errors.customerName.message}</p>}
+          <form onSubmit={handleSubmit((d) => createMutation.mutate(d as FormData))} className="space-y-5">
+
+            {/* Customer Information */}
+            <div className="space-y-3">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Customer Information</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label>Full Name <span className="text-destructive">*</span></Label>
+                  <div className="relative">
+                    <User className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+                    <Input className="pl-8" placeholder="John Doe" {...register('customerName')} />
+                  </div>
+                  {errors.customerName && <p className="text-xs text-destructive">{errors.customerName.message}</p>}
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Email <span className="text-muted-foreground font-normal">(optional)</span></Label>
+                  <div className="relative">
+                    <Mail className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+                    <Input className="pl-8" type="email" placeholder="customer@example.com" {...register('customerEmail')} />
+                  </div>
+                  {errors.customerEmail && <p className="text-xs text-destructive">{errors.customerEmail.message}</p>}
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Phone <span className="text-muted-foreground font-normal">(optional)</span></Label>
+                  <div className="relative">
+                    <Phone className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+                    <Input className="pl-8" placeholder="+1 555 000 0000" {...register('customerPhone')} />
+                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Address <span className="text-muted-foreground font-normal">(optional)</span></Label>
+                  <div className="relative">
+                    <MapPin className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+                    <Input className="pl-8" placeholder="123 Main St, City" {...register('customerAddress')} />
+                  </div>
+                </div>
+              </div>
             </div>
 
-            <div className="space-y-2">
+            <Separator />
+
+            {/* Order Items */}
+            <div className="space-y-3">
               <div className="flex items-center justify-between">
-                <Label>Items</Label>
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Order Items</p>
                 <Button type="button" variant="outline" size="sm" className="h-7 text-xs gap-1"
                   onClick={() => append({ productId: '', quantity: 1 })}>
                   <Plus className="w-3 h-3" /> Add Item
                 </Button>
               </div>
-              {fields.map((field, idx) => (
-                <div key={field.id} className="flex gap-2 items-start">
-                  <Controller name={`items.${idx}.productId`} control={control} render={({ field: f }) => (
-                    <Select onValueChange={f.onChange} value={f.value}>
-                      <SelectTrigger className="flex-1 text-sm h-9"><SelectValue placeholder="Select product" /></SelectTrigger>
-                      <SelectContent>
-                        {products?.filter((p: any) => p.status === 'ACTIVE').map((p: any) => (
-                          <SelectItem key={p.id} value={p.id}>
-                            {p.name} — ${Number(p.price).toFixed(2)} ({p.stock} in stock)
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  )} />
-                  <Input
-                    type="number" min="1" className="w-20 h-9 text-sm"
-                    placeholder="Qty"
-                    {...register(`items.${idx}.quantity`)}
-                  />
-                  {fields.length > 1 && (
-                    <Button type="button" variant="ghost" size="icon" className="h-9 w-9 shrink-0"
-                      onClick={() => remove(idx)}>
-                      <X className="w-4 h-4" />
-                    </Button>
-                  )}
-                </div>
-              ))}
+              <div className="space-y-2">
+                {fields.map((field, idx) => {
+                  const selectedProduct = products?.find((p: any) => p.id === watchedItems?.[idx]?.productId)
+                  return (
+                    <div key={field.id} className="flex gap-2 items-start">
+                      <Controller name={`items.${idx}.productId`} control={control} render={({ field: f }) => (
+                        <Select onValueChange={f.onChange} value={f.value}>
+                          <SelectTrigger className="flex-1 text-sm h-9"><SelectValue placeholder="Select product" /></SelectTrigger>
+                          <SelectContent>
+                            {products?.filter((p: any) => p.status === 'ACTIVE').map((p: any) => (
+                              <SelectItem key={p.id} value={p.id}>
+                                {p.name} — ${Number(p.price).toFixed(2)} ({p.stock} in stock)
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      )} />
+                      <Input
+                        type="number" min="1"
+                        max={selectedProduct?.stock || undefined}
+                        className="w-20 h-9 text-sm"
+                        placeholder="Qty"
+                        {...register(`items.${idx}.quantity`)}
+                      />
+                      {fields.length > 1 && (
+                        <Button type="button" variant="ghost" size="icon" className="h-9 w-9 shrink-0"
+                          onClick={() => remove(idx)}>
+                          <X className="w-4 h-4" />
+                        </Button>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
               {errors.items && <p className="text-xs text-destructive">{(errors.items as any).message || 'Fix item errors'}</p>}
             </div>
 
+            <Separator />
+
+            {/* Notes */}
             <div className="space-y-1.5">
               <Label>Notes <span className="text-muted-foreground font-normal">(optional)</span></Label>
-              <Textarea rows={2} placeholder="Delivery instructions..." {...register('notes')} />
+              <Textarea rows={2} placeholder="Delivery instructions, special requests..." {...register('notes')} />
             </div>
 
-            <div className="flex items-center justify-between py-2 border-t border-border">
+            {/* Total preview */}
+            <div className="flex items-center justify-between py-2.5 px-3 rounded-lg bg-muted/50 border border-border">
               <span className="text-sm text-muted-foreground">Estimated Total</span>
-              <span className="font-semibold font-mono">${calcTotal().toFixed(2)}</span>
+              <span className="font-semibold font-mono text-base">${calcTotal().toFixed(2)}</span>
             </div>
 
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button>
-              <Button type="submit" disabled={isSubmitting || createMutation.isPending}>Place Order</Button>
+              <Button type="submit" disabled={isSubmitting || createMutation.isPending} className="gap-1.5">
+                <ShoppingCart className="w-4 h-4" /> Place Order
+              </Button>
             </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
 
-      {/* Order Details Modal */}
+      {/* ─── Order Details Modal ────────────────────────────────────── */}
       <Dialog open={!!detailOrder} onOpenChange={(o) => !o && setDetailOrder(null)}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               Order Details
@@ -369,32 +457,98 @@ export default function OrdersPage() {
             </DialogTitle>
           </DialogHeader>
           {detailOrder && (
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-2 text-sm">
-                <div><span className="text-muted-foreground">Order #</span><p className="font-mono text-xs mt-0.5">{detailOrder.orderNumber}</p></div>
-                <div><span className="text-muted-foreground">Customer</span><p className="font-medium mt-0.5">{detailOrder.customerName}</p></div>
-                <div><span className="text-muted-foreground">Date</span><p className="mt-0.5">{new Date(detailOrder.createdAt).toLocaleDateString()}</p></div>
-                <div><span className="text-muted-foreground">Created by</span><p className="mt-0.5">{detailOrder.user?.name || '—'}</p></div>
+            <div className="space-y-4 text-sm">
+
+              {/* Order meta */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <p className="text-xs text-muted-foreground">Order Number</p>
+                  <p className="font-mono text-xs mt-0.5">{detailOrder.orderNumber}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Date</p>
+                  <p className="mt-0.5">{new Date(detailOrder.createdAt).toLocaleDateString()}</p>
+                </div>
               </div>
+
+              <Separator />
+
+              {/* Customer info */}
               <div>
-                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">Items</p>
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Customer</p>
+                <div className="space-y-1.5">
+                  <div className="flex items-center gap-2">
+                    <User className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                    <span className="font-medium">{detailOrder.customerName}</span>
+                  </div>
+                  {detailOrder.customerEmail && (
+                    <div className="flex items-center gap-2">
+                      <Mail className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                      <span>{detailOrder.customerEmail}</span>
+                    </div>
+                  )}
+                  {detailOrder.customerPhone && (
+                    <div className="flex items-center gap-2">
+                      <Phone className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                      <span>{detailOrder.customerPhone}</span>
+                    </div>
+                  )}
+                  {detailOrder.customerAddress && (
+                    <div className="flex items-center gap-2">
+                      <MapPin className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                      <span>{detailOrder.customerAddress}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <Separator />
+
+              {/* Items */}
+              <div>
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Items</p>
                 <div className="space-y-1.5">
                   {detailOrder.items?.map((item: any) => (
-                    <div key={item.id} className="flex justify-between text-sm">
-                      <span>{item.product?.name} <span className="text-muted-foreground">×{item.quantity}</span></span>
+                    <div key={item.id} className="flex justify-between">
+                      <span>
+                        {item.product?.name}
+                        <span className="text-muted-foreground ml-1">×{item.quantity}</span>
+                      </span>
                       <span className="font-mono text-xs">${(item.quantity * Number(item.unitPrice)).toFixed(2)}</span>
                     </div>
                   ))}
                 </div>
               </div>
+
               <div className="flex justify-between items-center pt-2 border-t border-border">
-                <span className="font-medium text-sm">Total</span>
+                <span className="font-medium">Total</span>
                 <span className="font-semibold font-mono">${Number(detailOrder.totalPrice).toFixed(2)}</span>
               </div>
+
               {detailOrder.notes && (
                 <div>
-                  <p className="text-xs text-muted-foreground">Notes</p>
-                  <p className="text-sm mt-0.5">{detailOrder.notes}</p>
+                  <p className="text-xs text-muted-foreground mb-0.5">Notes</p>
+                  <p className="text-sm">{detailOrder.notes}</p>
+                </div>
+              )}
+
+              <Separator />
+
+              {/* Admin info */}
+              {detailOrder.user && (
+                <div>
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">Processed By</p>
+                  <div className="flex items-start gap-2 p-2.5 rounded-lg bg-muted/40 border border-border">
+                    <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+                      <User className="w-3.5 h-3.5 text-primary" />
+                    </div>
+                    <div>
+                      <p className="font-medium text-sm">{detailOrder.user.name}</p>
+                      {detailOrder.user.email && (
+                        <p className="text-xs text-muted-foreground">{detailOrder.user.email}</p>
+                      )}
+                    </div>
+                  </div>
                 </div>
               )}
             </div>
@@ -410,11 +564,11 @@ export default function OrdersPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Cancel Confirmation */}
+      {/* ─── Cancel Confirmation ─────────────────────────────────────── */}
       <AlertDialog open={!!cancelTarget} onOpenChange={(o) => !o && setCancelTarget(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Cancel order?</AlertDialogTitle>
+            <AlertDialogTitle>Cancel this order?</AlertDialogTitle>
             <AlertDialogDescription>
               Order <strong>{cancelTarget?.orderNumber}</strong> will be cancelled and all stock will be automatically restored.
             </AlertDialogDescription>

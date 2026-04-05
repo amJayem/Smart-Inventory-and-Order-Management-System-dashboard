@@ -12,30 +12,67 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 
-const schema = z.object({
+const loginSchema = z.object({
   email: z.string().email('Enter a valid email'),
   password: z.string().min(6, 'At least 6 characters'),
 })
 
-type FormData = z.infer<typeof schema>
+const registerSchema = z.object({
+  name: z.string().min(2, 'Name must be at least 2 characters'),
+  email: z.string().email('Enter a valid email'),
+  password: z.string().min(6, 'At least 6 characters'),
+  confirmPassword: z.string(),
+}).refine((d) => d.password === d.confirmPassword, {
+  message: 'Passwords do not match',
+  path: ['confirmPassword'],
+})
+
+type LoginData = z.infer<typeof loginSchema>
+type RegisterData = z.infer<typeof registerSchema>
 
 export default function LoginPage() {
   const navigate = useNavigate()
   const setAuth = useAuthStore((s) => s.setAuth)
   const { theme, toggle } = useThemeStore()
+  const [mode, setMode] = useState<'login' | 'register'>('login')
   const [demoLoading, setDemoLoading] = useState(false)
 
-  const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<FormData>({
-    resolver: zodResolver(schema),
+  const loginForm = useForm<LoginData>({
+    resolver: zodResolver(loginSchema),
   })
 
-  const onSubmit = async (data: FormData) => {
+  const registerForm = useForm<RegisterData>({
+    resolver: zodResolver(registerSchema),
+  })
+
+  const switchMode = (next: 'login' | 'register') => {
+    setMode(next)
+    loginForm.reset()
+    registerForm.reset()
+  }
+
+  const onLogin = async (data: LoginData) => {
     try {
       const res = await api.post('/auth/login', data)
       setAuth(res.data.user, res.data.token)
       navigate('/')
     } catch (err: any) {
       toast.error(err.response?.data?.message || 'Invalid credentials')
+    }
+  }
+
+  const onRegister = async (data: RegisterData) => {
+    try {
+      const res = await api.post('/auth/register', {
+        name: data.name,
+        email: data.email,
+        password: data.password,
+      })
+      setAuth(res.data.user, res.data.token)
+      toast.success('Account created successfully')
+      navigate('/')
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Registration failed')
     }
   }
 
@@ -75,61 +112,154 @@ export default function LoginPage() {
             </div>
             <span className="font-semibold text-foreground text-lg tracking-tight">InventoryOS</span>
           </div>
-          <h1 className="text-2xl font-semibold text-foreground tracking-tight">Sign in</h1>
-          <p className="text-sm text-muted-foreground mt-1">Access your inventory dashboard</p>
+          <h1 className="text-2xl font-semibold text-foreground tracking-tight">
+            {mode === 'login' ? 'Sign in' : 'Create account'}
+          </h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            {mode === 'login' ? 'Access your inventory dashboard' : 'Set up your InventoryOS account'}
+          </p>
         </div>
 
-        {/* Demo Button */}
-        <button
-          onClick={handleDemoLogin}
-          disabled={demoLoading}
-          className="w-full flex items-center justify-center gap-2 h-10 px-4 mb-6 text-sm font-medium text-foreground bg-muted border border-border rounded-lg hover:bg-accent transition-colors disabled:opacity-50"
-        >
-          {demoLoading && <Loader2 className="w-4 h-4 animate-spin" />}
-          Continue with Demo Account
-        </button>
-
-        <div className="flex items-center gap-3 mb-6">
-          <div className="flex-1 h-px bg-border" />
-          <span className="text-xs text-muted-foreground">or</span>
-          <div className="flex-1 h-px bg-border" />
-        </div>
-
-        {/* Form */}
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-          <div className="space-y-1.5">
-            <Label htmlFor="email" className="text-sm font-medium">Email</Label>
-            <Input
-              id="email"
-              type="email"
-              placeholder="you@company.com"
-              className="h-10 text-sm"
-              {...register('email')}
-            />
-            {errors.email && <p className="text-xs text-destructive">{errors.email.message}</p>}
-          </div>
-
-          <div className="space-y-1.5">
-            <Label htmlFor="password" className="text-sm font-medium">Password</Label>
-            <Input
-              id="password"
-              type="password"
-              placeholder="••••••••"
-              className="h-10 text-sm"
-              {...register('password')}
-            />
-            {errors.password && <p className="text-xs text-destructive">{errors.password.message}</p>}
-          </div>
-
-          <Button type="submit" disabled={isSubmitting} className="w-full h-10 text-sm font-medium">
-            {isSubmitting && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
+        {/* Mode Toggle */}
+        <div className="flex rounded-lg border border-border p-1 mb-6 bg-muted/30">
+          <button
+            onClick={() => switchMode('login')}
+            className={`flex-1 h-8 text-sm font-medium rounded-md transition-all ${
+              mode === 'login'
+                ? 'bg-background text-foreground shadow-sm border border-border'
+                : 'text-muted-foreground hover:text-foreground'
+            }`}
+          >
             Sign in
-          </Button>
-        </form>
+          </button>
+          <button
+            onClick={() => switchMode('register')}
+            className={`flex-1 h-8 text-sm font-medium rounded-md transition-all ${
+              mode === 'register'
+                ? 'bg-background text-foreground shadow-sm border border-border'
+                : 'text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            Register
+          </button>
+        </div>
 
-        <p className="mt-6 text-xs text-muted-foreground text-center">
-          Demo — <span className="text-foreground">demo@admin.com</span> / <span className="text-foreground">demo1234</span>
-        </p>
+        {mode === 'login' ? (
+          <>
+            {/* Demo Button */}
+            <button
+              onClick={handleDemoLogin}
+              disabled={demoLoading}
+              className="w-full flex items-center justify-center gap-2 h-10 px-4 mb-6 text-sm font-medium text-foreground bg-muted border border-border rounded-lg hover:bg-accent transition-colors disabled:opacity-50"
+            >
+              {demoLoading && <Loader2 className="w-4 h-4 animate-spin" />}
+              Continue with Demo Account
+            </button>
+
+            <div className="flex items-center gap-3 mb-6">
+              <div className="flex-1 h-px bg-border" />
+              <span className="text-xs text-muted-foreground">or sign in with email</span>
+              <div className="flex-1 h-px bg-border" />
+            </div>
+
+            <form onSubmit={loginForm.handleSubmit(onLogin)} className="space-y-4">
+              <div className="space-y-1.5">
+                <Label className="text-sm font-medium">Email</Label>
+                <Input
+                  type="email"
+                  placeholder="you@company.com"
+                  className="h-10 text-sm"
+                  {...loginForm.register('email')}
+                />
+                {loginForm.formState.errors.email && (
+                  <p className="text-xs text-destructive">{loginForm.formState.errors.email.message}</p>
+                )}
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-sm font-medium">Password</Label>
+                <Input
+                  type="password"
+                  placeholder="••••••••"
+                  className="h-10 text-sm"
+                  {...loginForm.register('password')}
+                />
+                {loginForm.formState.errors.password && (
+                  <p className="text-xs text-destructive">{loginForm.formState.errors.password.message}</p>
+                )}
+              </div>
+              <Button type="submit" disabled={loginForm.formState.isSubmitting} className="w-full h-10 text-sm font-medium">
+                {loginForm.formState.isSubmitting && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
+                Sign in
+              </Button>
+            </form>
+
+            <p className="mt-6 text-xs text-muted-foreground text-center">
+              Demo — <span className="text-foreground">demo@admin.com</span> / <span className="text-foreground">demo1234</span>
+            </p>
+          </>
+        ) : (
+          <>
+            <form onSubmit={registerForm.handleSubmit(onRegister)} className="space-y-4">
+              <div className="space-y-1.5">
+                <Label className="text-sm font-medium">Full Name</Label>
+                <Input
+                  type="text"
+                  placeholder="John Doe"
+                  className="h-10 text-sm"
+                  {...registerForm.register('name')}
+                />
+                {registerForm.formState.errors.name && (
+                  <p className="text-xs text-destructive">{registerForm.formState.errors.name.message}</p>
+                )}
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-sm font-medium">Email</Label>
+                <Input
+                  type="email"
+                  placeholder="you@company.com"
+                  className="h-10 text-sm"
+                  {...registerForm.register('email')}
+                />
+                {registerForm.formState.errors.email && (
+                  <p className="text-xs text-destructive">{registerForm.formState.errors.email.message}</p>
+                )}
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-sm font-medium">Password</Label>
+                <Input
+                  type="password"
+                  placeholder="••••••••"
+                  className="h-10 text-sm"
+                  {...registerForm.register('password')}
+                />
+                {registerForm.formState.errors.password && (
+                  <p className="text-xs text-destructive">{registerForm.formState.errors.password.message}</p>
+                )}
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-sm font-medium">Confirm Password</Label>
+                <Input
+                  type="password"
+                  placeholder="••••••••"
+                  className="h-10 text-sm"
+                  {...registerForm.register('confirmPassword')}
+                />
+                {registerForm.formState.errors.confirmPassword && (
+                  <p className="text-xs text-destructive">{registerForm.formState.errors.confirmPassword.message}</p>
+                )}
+              </div>
+              <Button type="submit" disabled={registerForm.formState.isSubmitting} className="w-full h-10 text-sm font-medium">
+                {registerForm.formState.isSubmitting && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
+                Create Account
+              </Button>
+            </form>
+
+            <p className="mt-6 text-xs text-muted-foreground text-center">
+              New accounts are created with <span className="text-foreground">Manager</span> role by default.
+              An Admin can upgrade your role.
+            </p>
+          </>
+        )}
       </div>
     </div>
   )

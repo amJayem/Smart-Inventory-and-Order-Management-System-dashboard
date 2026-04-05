@@ -1,6 +1,9 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Search, MoreHorizontal, ShoppingCart, X, FileText, Mail, Phone, MapPin, User } from 'lucide-react'
+import {
+  Plus, Search, MoreHorizontal, ShoppingCart, X,
+  FileText, Mail, Phone, MapPin, User, Pencil, Package,
+} from 'lucide-react'
 import { useForm, useFieldArray, Controller } from 'react-hook-form'
 import { z } from 'zod'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -12,6 +15,7 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Separator } from '@/components/ui/separator'
+import { Checkbox } from '@/components/ui/checkbox'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog'
@@ -21,7 +25,8 @@ import {
   AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import {
-  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem,
+  DropdownMenuSeparator, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -30,38 +35,93 @@ import {
 const ORDER_STATUSES = ['PENDING', 'CONFIRMED', 'SHIPPED', 'DELIVERED', 'CANCELLED'] as const
 
 const statusColors: Record<string, string> = {
-  PENDING: 'bg-amber-500/10 text-amber-600 border-amber-500/20',
+  PENDING:   'bg-amber-500/10 text-amber-600 border-amber-500/20',
   CONFIRMED: 'bg-blue-500/10 text-blue-600 border-blue-500/20',
-  SHIPPED: 'bg-purple-500/10 text-purple-600 border-purple-500/20',
+  SHIPPED:   'bg-purple-500/10 text-purple-600 border-purple-500/20',
   DELIVERED: 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20',
   CANCELLED: 'bg-red-500/10 text-red-500 border-red-500/20',
 }
 
+const addressSchema = z.object({
+  street:  z.string().optional(),
+  city:    z.string().optional(),
+  state:   z.string().optional(),
+  zip:     z.string().optional(),
+  country: z.string().optional(),
+})
+
 const itemSchema = z.object({
   productId: z.string().min(1, 'Select a product'),
-  quantity: z.coerce.number().int().min(1, 'Min 1'),
+  quantity:  z.coerce.number().int().min(1, 'Min 1'),
 })
 
-const schema = z.object({
-  customerName: z.string().min(1, 'Customer name is required'),
-  customerEmail: z.string().email('Invalid email format').optional().or(z.literal('')),
-  customerPhone: z.string().optional(),
+const orderSchema = z.object({
+  customerName:    z.string().min(1, 'Customer name is required'),
+  customerEmail:   z.string().email('Invalid email').optional().or(z.literal('')),
+  customerPhone:   z.string().optional(),
   customerAddress: z.string().optional(),
-  notes: z.string().optional(),
-  items: z.array(itemSchema).min(1, 'Add at least one item'),
+  shippingAddress: addressSchema.optional(),
+  billingAddress:  addressSchema.optional(),
+  notes:           z.string().optional(),
+  items:           z.array(itemSchema).min(1, 'Add at least one item'),
 })
-type FormData = z.infer<typeof schema>
 
+const editSchema = z.object({
+  customerName:    z.string().min(1, 'Customer name is required'),
+  customerEmail:   z.string().email('Invalid email').optional().or(z.literal('')),
+  customerPhone:   z.string().optional(),
+  customerAddress: z.string().optional(),
+  shippingAddress: addressSchema.optional(),
+  billingAddress:  addressSchema.optional(),
+  notes:           z.string().optional(),
+})
+
+type OrderFormData = z.infer<typeof orderSchema>
+type EditFormData  = z.infer<typeof editSchema>
+
+// ── Helper ────────────────────────────────────────────────────────────────────
+function formatAddress(addr: any) {
+  if (!addr) return null
+  const parts = [addr.street, addr.city, addr.state, addr.zip, addr.country].filter(Boolean)
+  return parts.length ? parts.join(', ') : null
+}
+
+function AddressFields({ prefix, register, label }: {
+  prefix: 'shippingAddress' | 'billingAddress'
+  register: any
+  label: string
+}) {
+  return (
+    <div className="space-y-2">
+      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{label}</p>
+      <Input placeholder="Street / Line 1" className="h-9 text-sm" {...register(`${prefix}.street`)} />
+      <div className="grid grid-cols-2 gap-2">
+        <Input placeholder="City" className="h-9 text-sm" {...register(`${prefix}.city`)} />
+        <Input placeholder="State / Region" className="h-9 text-sm" {...register(`${prefix}.state`)} />
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <Input placeholder="ZIP / Postal Code" className="h-9 text-sm" {...register(`${prefix}.zip`)} />
+        <Input placeholder="Country" className="h-9 text-sm" {...register(`${prefix}.country`)} />
+      </div>
+    </div>
+  )
+}
+
+// ── Main Page ─────────────────────────────────────────────────────────────────
 export default function OrdersPage() {
   const qc = useQueryClient()
-  const [createOpen, setCreateOpen] = useState(false)
+  const [createOpen, setCreateOpen]   = useState(false)
+  const [editOrder,  setEditOrder]    = useState<any>(null)
   const [detailOrder, setDetailOrder] = useState<any>(null)
   const [cancelTarget, setCancelTarget] = useState<any>(null)
-  const [search, setSearch] = useState('')
+  const [search, setSearch]           = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
-  const [page, setPage] = useState(1)
-  const [limit, setLimit] = useState(10)
+  const [page, setPage]               = useState(1)
+  const [limit, setLimit]             = useState(10)
+  const [billingSame, setBillingSame] = useState(true)
+  const [editBillingSame, setEditBillingSame] = useState(true)
 
+  // ── Queries ────────────────────────────────────────────────────────────────
   const { data, isLoading } = useQuery({
     queryKey: ['orders', page, limit, search, statusFilter],
     queryFn: () => api.get('/orders', {
@@ -75,27 +135,55 @@ export default function OrdersPage() {
     queryFn: () => api.get('/products', { params: { limit: 100 } }).then((r) => r.data.data),
   })
 
-  const {
-    control, register, handleSubmit, reset, watch,
-    formState: { errors, isSubmitting },
-  } = useForm<FormData>({
-    resolver: zodResolver(schema) as any,
+  // ── Create form ────────────────────────────────────────────────────────────
+  const createForm = useForm<OrderFormData>({
+    resolver: zodResolver(orderSchema) as any,
     defaultValues: {
-      customerName: '', customerEmail: '', customerPhone: '',
-      customerAddress: '', notes: '',
+      customerName: '', customerEmail: '', customerPhone: '', customerAddress: '',
+      shippingAddress: { street: '', city: '', state: '', zip: '', country: '' },
+      billingAddress:  { street: '', city: '', state: '', zip: '', country: '' },
+      notes: '',
       items: [{ productId: '', quantity: 1 }],
     },
   })
-  const { fields, append, remove } = useFieldArray({ control, name: 'items' })
-  const watchedItems = watch('items')
+  const { fields, append, remove } = useFieldArray({ control: createForm.control, name: 'items' })
+  const watchedItems = createForm.watch('items')
 
+  // ── Edit form ──────────────────────────────────────────────────────────────
+  const editForm = useForm<EditFormData>({
+    resolver: zodResolver(editSchema) as any,
+  })
+
+  const openEdit = (order: any) => {
+    const sa = order.shippingAddress
+    const ba = order.billingAddress
+    const same = !ba || JSON.stringify(sa) === JSON.stringify(ba)
+    setEditBillingSame(same)
+    editForm.reset({
+      customerName:    order.customerName    ?? '',
+      customerEmail:   order.customerEmail   ?? '',
+      customerPhone:   order.customerPhone   ?? '',
+      customerAddress: order.customerAddress ?? '',
+      shippingAddress: sa ?? { street: '', city: '', state: '', zip: '', country: '' },
+      billingAddress:  ba ?? { street: '', city: '', state: '', zip: '', country: '' },
+      notes:           order.notes ?? '',
+    })
+    setEditOrder(order)
+  }
+
+  // ── Mutations ──────────────────────────────────────────────────────────────
   const createMutation = useMutation({
-    mutationFn: (d: FormData) => {
+    mutationFn: (d: OrderFormData) => {
+      const shipping = d.shippingAddress
       const payload = {
         ...d,
-        customerEmail: d.customerEmail || undefined,
-        customerPhone: d.customerPhone || undefined,
+        customerEmail:   d.customerEmail   || undefined,
+        customerPhone:   d.customerPhone   || undefined,
         customerAddress: d.customerAddress || undefined,
+        shippingAddress: shipping?.street ? shipping : undefined,
+        billingAddress:  billingSame
+          ? (shipping?.street ? shipping : undefined)
+          : (d.billingAddress?.street ? d.billingAddress : undefined),
         notes: d.notes || undefined,
       }
       return api.post('/orders', payload)
@@ -103,21 +191,43 @@ export default function OrdersPage() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['orders'] })
       qc.invalidateQueries({ queryKey: ['products'] })
-      toast.success('Order created successfully')
+      toast.success('Order created')
       setCreateOpen(false)
-      reset()
+      createForm.reset()
+      setBillingSame(true)
     },
     onError: (e: any) => toast.error(e.response?.data?.message || 'Failed to create order'),
+  })
+
+  const editMutation = useMutation({
+    mutationFn: (d: EditFormData) => {
+      const shipping = d.shippingAddress
+      const payload = {
+        ...d,
+        customerEmail:   d.customerEmail   || undefined,
+        customerPhone:   d.customerPhone   || undefined,
+        customerAddress: d.customerAddress || undefined,
+        shippingAddress: shipping?.street ? shipping : undefined,
+        billingAddress:  editBillingSame
+          ? (shipping?.street ? shipping : undefined)
+          : (d.billingAddress?.street ? d.billingAddress : undefined),
+        notes: d.notes || undefined,
+      }
+      return api.patch(`/orders/${editOrder.id}`, payload)
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['orders'] })
+      toast.success('Order updated')
+      setEditOrder(null)
+    },
+    onError: (e: any) => toast.error(e.response?.data?.message || 'Failed to update order'),
   })
 
   const statusMutation = useMutation({
     mutationFn: ({ id, status }: { id: string; status: string }) =>
       api.patch(`/orders/${id}/status`, { status }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['orders'] })
-      toast.success('Status updated')
-    },
-    onError: (e: any) => toast.error(e.response?.data?.message || 'Cannot update status'),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['orders'] }); toast.success('Status updated') },
+    onError:   (e: any) => toast.error(e.response?.data?.message || 'Cannot update status'),
   })
 
   const cancelMutation = useMutation({
@@ -131,45 +241,39 @@ export default function OrdersPage() {
     onError: (e: any) => toast.error(e.response?.data?.message || 'Cannot cancel order'),
   })
 
+  // ── Invoice ────────────────────────────────────────────────────────────────
   const downloadInvoice = (order: any) => {
     const adminInfo = order.user
-      ? `${order.user.name}${order.user.email ? ` <${order.user.email}>` : ''}`
-      : '—'
+      ? `${order.user.name}${order.user.email ? ` <${order.user.email}>` : ''}` : '—'
+    const sa = formatAddress(order.shippingAddress)
+    const ba = formatAddress(order.billingAddress)
     const lines = [
-      'INVOICE',
-      '='.repeat(50),
-      `Order Number : ${order.orderNumber}`,
-      `Date         : ${new Date(order.createdAt).toLocaleDateString()}`,
-      `Status       : ${order.status}`,
-      '',
-      'CUSTOMER INFORMATION',
-      '-'.repeat(50),
-      `Name         : ${order.customerName}`,
-      order.customerEmail ? `Email        : ${order.customerEmail}` : null,
-      order.customerPhone ? `Phone        : ${order.customerPhone}` : null,
-      order.customerAddress ? `Address      : ${order.customerAddress}` : null,
-      '',
-      'ORDER ITEMS',
-      '-'.repeat(50),
+      'INVOICE', '='.repeat(55),
+      `Order Number  : ${order.orderNumber}`,
+      `Date          : ${new Date(order.createdAt).toLocaleDateString()}`,
+      `Status        : ${order.status}`,
+      '', 'CUSTOMER', '-'.repeat(55),
+      `Name          : ${order.customerName}`,
+      order.customerEmail   ? `Email         : ${order.customerEmail}`   : null,
+      order.customerPhone   ? `Phone         : ${order.customerPhone}`   : null,
+      order.customerAddress ? `Address       : ${order.customerAddress}` : null,
+      sa                    ? `Shipping      : ${sa}`                    : null,
+      ba                    ? `Billing       : ${ba}`                    : null,
+      '', 'ITEMS', '-'.repeat(55),
       ...order.items.map((i: any) =>
-        `${i.product.name.padEnd(30)} x${i.quantity}  @$${Number(i.unitPrice).toFixed(2)}  = $${(i.quantity * Number(i.unitPrice)).toFixed(2)}`
+        `${i.product.name.padEnd(32)} x${i.quantity}  @$${Number(i.unitPrice).toFixed(2)}  = $${(i.quantity * Number(i.unitPrice)).toFixed(2)}`
       ),
-      '',
-      '='.repeat(50),
+      '', '='.repeat(55),
       `TOTAL: $${Number(order.totalPrice).toFixed(2)}`,
-      '',
-      order.notes ? `Notes: ${order.notes}` : null,
-      '',
-      '-'.repeat(50),
-      `Processed by : ${adminInfo}`,
+      order.notes ? `\nNotes: ${order.notes}` : null,
+      '', '-'.repeat(55),
+      `Processed by  : ${adminInfo}`,
     ].filter((l) => l !== null)
 
     const blob = new Blob([lines.join('\n')], { type: 'text/plain' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `invoice-${order.orderNumber}.txt`
-    a.click()
+    const url  = URL.createObjectURL(blob)
+    const a    = document.createElement('a')
+    a.href = url; a.download = `invoice-${order.orderNumber}.txt`; a.click()
     URL.revokeObjectURL(url)
   }
 
@@ -181,23 +285,21 @@ export default function OrdersPage() {
     }, 0)
   }
 
-  const orders = data?.data || []
-  const totalPages = data?.totalPages || 1
-
+  const orders      = data?.data || []
+  const totalPages  = data?.totalPages || 1
   const nextStatuses: Record<string, string[]> = {
-    PENDING: ['CONFIRMED'],
-    CONFIRMED: ['SHIPPED'],
-    SHIPPED: ['DELIVERED'],
+    PENDING: ['CONFIRMED'], CONFIRMED: ['SHIPPED'], SHIPPED: ['DELIVERED'],
   }
 
+  // ── Render ─────────────────────────────────────────────────────────────────
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-semibold text-foreground">Orders</h1>
+          <h1 className="text-xl font-semibold">Orders</h1>
           <p className="text-sm text-muted-foreground mt-0.5">{data?.total ?? 0} total orders</p>
         </div>
-        <Button size="sm" onClick={() => { reset(); setCreateOpen(true) }} className="gap-1.5">
+        <Button size="sm" onClick={() => { createForm.reset(); setBillingSame(true); setCreateOpen(true) }} className="gap-1.5">
           <Plus className="w-4 h-4" /> New Order
         </Button>
       </div>
@@ -206,12 +308,8 @@ export default function OrdersPage() {
       <div className="flex gap-2 flex-wrap">
         <div className="relative flex-1 min-w-48">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
-          <Input
-            placeholder="Search by customer..."
-            className="pl-8 h-8 text-sm"
-            value={search}
-            onChange={(e) => { setSearch(e.target.value); setPage(1) }}
-          />
+          <Input placeholder="Search by customer..." className="pl-8 h-8 text-sm" value={search}
+            onChange={(e) => { setSearch(e.target.value); setPage(1) }} />
         </div>
         <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v ?? 'all'); setPage(1) }}>
           <SelectTrigger className="h-8 w-36 text-sm"><SelectValue placeholder="All statuses" /></SelectTrigger>
@@ -227,81 +325,74 @@ export default function OrdersPage() {
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-border bg-muted/40">
-              <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wider">Order</th>
-              <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wider">Customer</th>
-              <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wider">Status</th>
-              <th className="text-right px-4 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wider">Total</th>
-              <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wider">Date</th>
-              <th className="w-10 px-4 py-3" />
+              {['Order', 'Customer', 'Status', 'Total', 'Date', ''].map((h, i) => (
+                <th key={i} className={`px-4 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wider ${i === 3 ? 'text-right' : 'text-left'} ${i === 5 ? 'w-10' : ''}`}>{h}</th>
+              ))}
             </tr>
           </thead>
           <tbody>
-            {isLoading ? (
-              Array.from({ length: 5 }).map((_, i) => (
-                <tr key={i} className="border-b border-border last:border-0">
-                  {Array.from({ length: 6 }).map((_, j) => (
-                    <td key={j} className="px-4 py-3"><Skeleton className="h-4 w-full" /></td>
-                  ))}
-                </tr>
-              ))
-            ) : orders.length === 0 ? (
-              <tr>
-                <td colSpan={6} className="px-4 py-12 text-center text-sm text-muted-foreground">
-                  <ShoppingCart className="w-8 h-8 mx-auto mb-2 opacity-30" />
-                  No orders found
-                </td>
-              </tr>
-            ) : orders.map((o: any) => (
-              <tr key={o.id} className="border-b border-border last:border-0 hover:bg-muted/30 transition-colors">
-                <td className="px-4 py-3">
-                  <span className="font-mono text-xs text-muted-foreground">{o.orderNumber}</span>
-                </td>
-                <td className="px-4 py-3">
-                  <p className="font-medium text-foreground">{o.customerName}</p>
-                  {o.customerEmail && (
-                    <p className="text-xs text-muted-foreground">{o.customerEmail}</p>
-                  )}
-                </td>
-                <td className="px-4 py-3">
-                  <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium border ${statusColors[o.status] || ''}`}>
-                    {o.status}
-                  </span>
-                </td>
-                <td className="px-4 py-3 text-right font-mono text-xs">${Number(o.totalPrice).toFixed(2)}</td>
-                <td className="px-4 py-3 text-xs text-muted-foreground">
-                  {new Date(o.createdAt).toLocaleDateString()}
-                </td>
-                <td className="px-4 py-3">
-                  <DropdownMenu>
-                    <DropdownMenuTrigger className="h-7 w-7 inline-flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors">
-                      <MoreHorizontal className="w-4 h-4" />
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="w-44">
-                      <DropdownMenuItem onClick={() => setDetailOrder(o)}>View Details</DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => downloadInvoice(o)}>
-                        <FileText className="w-3.5 h-3.5 mr-2" /> Download Invoice
-                      </DropdownMenuItem>
-                      {nextStatuses[o.status]?.map((s) => (
-                        <DropdownMenuItem key={s} onClick={() => statusMutation.mutate({ id: o.id, status: s })}>
-                          Mark as {s}
-                        </DropdownMenuItem>
-                      ))}
-                      {o.status !== 'CANCELLED' && !['SHIPPED', 'DELIVERED'].includes(o.status) && (
-                        <>
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem
-                            onClick={() => setCancelTarget(o)}
-                            className="text-destructive focus:text-destructive"
-                          >
-                            Cancel Order
+            {isLoading
+              ? Array.from({ length: 5 }).map((_, i) => (
+                  <tr key={i} className="border-b border-border last:border-0">
+                    {Array.from({ length: 6 }).map((_, j) => (
+                      <td key={j} className="px-4 py-3"><Skeleton className="h-4 w-full" /></td>
+                    ))}
+                  </tr>
+                ))
+              : orders.length === 0
+                ? (
+                  <tr><td colSpan={6} className="px-4 py-12 text-center text-sm text-muted-foreground">
+                    <ShoppingCart className="w-8 h-8 mx-auto mb-2 opacity-30" />No orders found
+                  </td></tr>
+                )
+                : orders.map((o: any) => (
+                  <tr key={o.id} className="border-b border-border last:border-0 hover:bg-muted/30 transition-colors">
+                    <td className="px-4 py-3 font-mono text-xs text-muted-foreground">{o.orderNumber}</td>
+                    <td className="px-4 py-3">
+                      <p className="font-medium">{o.customerName}</p>
+                      {o.customerEmail && <p className="text-xs text-muted-foreground">{o.customerEmail}</p>}
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium border ${statusColors[o.status] || ''}`}>
+                        {o.status}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-right font-mono text-xs">${Number(o.totalPrice).toFixed(2)}</td>
+                    <td className="px-4 py-3 text-xs text-muted-foreground">{new Date(o.createdAt).toLocaleDateString()}</td>
+                    <td className="px-4 py-3">
+                      <DropdownMenu>
+                        <DropdownMenuTrigger className="h-7 w-7 inline-flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors">
+                          <MoreHorizontal className="w-4 h-4" />
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="w-44">
+                          <DropdownMenuItem onClick={() => setDetailOrder(o)}>
+                            <Package className="w-3.5 h-3.5 mr-2" /> View Details
                           </DropdownMenuItem>
-                        </>
-                      )}
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </td>
-              </tr>
-            ))}
+                          <DropdownMenuItem onClick={() => openEdit(o)}>
+                            <Pencil className="w-3.5 h-3.5 mr-2" /> Edit Order
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => downloadInvoice(o)}>
+                            <FileText className="w-3.5 h-3.5 mr-2" /> Download Invoice
+                          </DropdownMenuItem>
+                          {nextStatuses[o.status]?.map((s) => (
+                            <DropdownMenuItem key={s} onClick={() => statusMutation.mutate({ id: o.id, status: s })}>
+                              Mark as {s}
+                            </DropdownMenuItem>
+                          ))}
+                          {o.status !== 'CANCELLED' && !['SHIPPED', 'DELIVERED'].includes(o.status) && (
+                            <>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem onClick={() => setCancelTarget(o)} className="text-destructive focus:text-destructive">
+                                Cancel Order
+                              </DropdownMenuItem>
+                            </>
+                          )}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </td>
+                  </tr>
+                ))
+            }
           </tbody>
         </table>
       </div>
@@ -312,29 +403,25 @@ export default function OrdersPage() {
           <span>Rows per page:</span>
           <Select value={String(limit)} onValueChange={(v) => { setLimit(+(v ?? limit)); setPage(1) }}>
             <SelectTrigger className="h-7 w-16 text-xs"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              {[5, 10, 20, 50].map((n) => <SelectItem key={n} value={String(n)}>{n}</SelectItem>)}
-            </SelectContent>
+            <SelectContent>{[5,10,20,50].map((n) => <SelectItem key={n} value={String(n)}>{n}</SelectItem>)}</SelectContent>
           </Select>
         </div>
         <div className="flex items-center gap-3">
           <span>Page {page} of {totalPages || 1}</span>
           <div className="flex gap-1">
-            <Button variant="outline" size="sm" className="h-7 px-2 text-xs" onClick={() => setPage(p => p - 1)} disabled={page <= 1}>Prev</Button>
-            <Button variant="outline" size="sm" className="h-7 px-2 text-xs" onClick={() => setPage(p => p + 1)} disabled={page >= totalPages}>Next</Button>
+            <Button variant="outline" size="sm" className="h-7 px-2 text-xs" onClick={() => setPage(p => p-1)} disabled={page<=1}>Prev</Button>
+            <Button variant="outline" size="sm" className="h-7 px-2 text-xs" onClick={() => setPage(p => p+1)} disabled={page>=totalPages}>Next</Button>
           </div>
         </div>
       </div>
 
-      {/* ─── Create Order Modal ─────────────────────────────────────── */}
+      {/* ── Create Order Modal ─────────────────────────────────────────────── */}
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent className="sm:max-w-2xl max-h-[92vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>New Order</DialogTitle>
-          </DialogHeader>
-          <form onSubmit={handleSubmit((d) => createMutation.mutate(d as FormData))} className="space-y-5">
+          <DialogHeader><DialogTitle>New Order</DialogTitle></DialogHeader>
+          <form onSubmit={createForm.handleSubmit((d) => createMutation.mutate(d as OrderFormData))} className="space-y-5">
 
-            {/* Customer Information */}
+            {/* Customer */}
             <div className="space-y-3">
               <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Customer Information</p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -342,30 +429,30 @@ export default function OrdersPage() {
                   <Label>Full Name <span className="text-destructive">*</span></Label>
                   <div className="relative">
                     <User className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
-                    <Input className="pl-8" placeholder="John Doe" {...register('customerName')} />
+                    <Input className="pl-8 h-9" placeholder="John Doe" {...createForm.register('customerName')} />
                   </div>
-                  {errors.customerName && <p className="text-xs text-destructive">{errors.customerName.message}</p>}
+                  {createForm.formState.errors.customerName && <p className="text-xs text-destructive">{createForm.formState.errors.customerName.message}</p>}
                 </div>
                 <div className="space-y-1.5">
-                  <Label>Email <span className="text-muted-foreground font-normal">(optional)</span></Label>
+                  <Label>Email <span className="text-muted-foreground font-normal text-xs">(optional)</span></Label>
                   <div className="relative">
                     <Mail className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
-                    <Input className="pl-8" type="email" placeholder="customer@example.com" {...register('customerEmail')} />
+                    <Input className="pl-8 h-9" type="email" placeholder="customer@example.com" {...createForm.register('customerEmail')} />
                   </div>
-                  {errors.customerEmail && <p className="text-xs text-destructive">{errors.customerEmail.message}</p>}
+                  {createForm.formState.errors.customerEmail && <p className="text-xs text-destructive">{createForm.formState.errors.customerEmail.message}</p>}
                 </div>
                 <div className="space-y-1.5">
-                  <Label>Phone <span className="text-muted-foreground font-normal">(optional)</span></Label>
+                  <Label>Phone <span className="text-muted-foreground font-normal text-xs">(optional)</span></Label>
                   <div className="relative">
                     <Phone className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
-                    <Input className="pl-8" placeholder="+1 555 000 0000" {...register('customerPhone')} />
+                    <Input className="pl-8 h-9" placeholder="+1 555 000 0000" {...createForm.register('customerPhone')} />
                   </div>
                 </div>
                 <div className="space-y-1.5">
-                  <Label>Address <span className="text-muted-foreground font-normal">(optional)</span></Label>
+                  <Label>Delivery Address <span className="text-muted-foreground font-normal text-xs">(optional)</span></Label>
                   <div className="relative">
                     <MapPin className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
-                    <Input className="pl-8" placeholder="123 Main St, City" {...register('customerAddress')} />
+                    <Input className="pl-8 h-9" placeholder="Primary delivery address" {...createForm.register('customerAddress')} />
                   </div>
                 </div>
               </div>
@@ -373,7 +460,19 @@ export default function OrdersPage() {
 
             <Separator />
 
-            {/* Order Items */}
+            {/* Shipping */}
+            <AddressFields prefix="shippingAddress" register={createForm.register} label="Shipping Address" />
+
+            {/* Billing same as shipping */}
+            <div className="flex items-center gap-2">
+              <Checkbox id="billing-same" checked={billingSame} onCheckedChange={(v) => setBillingSame(!!v)} />
+              <label htmlFor="billing-same" className="text-sm text-muted-foreground cursor-pointer">Billing address same as shipping</label>
+            </div>
+            {!billingSame && <AddressFields prefix="billingAddress" register={createForm.register} label="Billing Address" />}
+
+            <Separator />
+
+            {/* Items */}
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Order Items</p>
@@ -382,52 +481,43 @@ export default function OrdersPage() {
                   <Plus className="w-3 h-3" /> Add Item
                 </Button>
               </div>
-              <div className="space-y-2">
-                {fields.map((field, idx) => {
-                  const selectedProduct = products?.find((p: any) => p.id === watchedItems?.[idx]?.productId)
-                  return (
-                    <div key={field.id} className="flex gap-2 items-start">
-                      <Controller name={`items.${idx}.productId`} control={control} render={({ field: f }) => (
-                        <Select onValueChange={f.onChange} value={f.value}>
-                          <SelectTrigger className="flex-1 text-sm h-9"><SelectValue placeholder="Select product" /></SelectTrigger>
-                          <SelectContent>
-                            {products?.filter((p: any) => p.status === 'ACTIVE').map((p: any) => (
-                              <SelectItem key={p.id} value={p.id}>
-                                {p.name} — ${Number(p.price).toFixed(2)} ({p.stock} in stock)
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      )} />
-                      <Input
-                        type="number" min="1"
-                        max={selectedProduct?.stock || undefined}
-                        className="w-20 h-9 text-sm"
-                        placeholder="Qty"
-                        {...register(`items.${idx}.quantity`)}
-                      />
-                      {fields.length > 1 && (
-                        <Button type="button" variant="ghost" size="icon" className="h-9 w-9 shrink-0"
-                          onClick={() => remove(idx)}>
-                          <X className="w-4 h-4" />
-                        </Button>
-                      )}
-                    </div>
-                  )
-                })}
-              </div>
-              {errors.items && <p className="text-xs text-destructive">{(errors.items as any).message || 'Fix item errors'}</p>}
+              {fields.map((field, idx) => {
+                const selectedProduct = products?.find((p: any) => p.id === watchedItems?.[idx]?.productId)
+                return (
+                  <div key={field.id} className="flex gap-2 items-start">
+                    <Controller name={`items.${idx}.productId`} control={createForm.control} render={({ field: f }) => (
+                      <Select onValueChange={f.onChange} value={f.value}>
+                        <SelectTrigger className="flex-1 text-sm h-9"><SelectValue placeholder="Select product" /></SelectTrigger>
+                        <SelectContent>
+                          {products?.filter((p: any) => p.status === 'ACTIVE').map((p: any) => (
+                            <SelectItem key={p.id} value={p.id}>{p.name} — ${Number(p.price).toFixed(2)} ({p.stock} in stock)</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )} />
+                    <Input type="number" min="1" max={selectedProduct?.stock || undefined}
+                      className="w-20 h-9 text-sm" placeholder="Qty"
+                      {...createForm.register(`items.${idx}.quantity`)} />
+                    {fields.length > 1 && (
+                      <Button type="button" variant="ghost" size="icon" className="h-9 w-9 shrink-0" onClick={() => remove(idx)}>
+                        <X className="w-4 h-4" />
+                      </Button>
+                    )}
+                  </div>
+                )
+              })}
+              {createForm.formState.errors.items && (
+                <p className="text-xs text-destructive">{(createForm.formState.errors.items as any).message || 'Fix item errors'}</p>
+              )}
             </div>
 
             <Separator />
 
-            {/* Notes */}
             <div className="space-y-1.5">
-              <Label>Notes <span className="text-muted-foreground font-normal">(optional)</span></Label>
-              <Textarea rows={2} placeholder="Delivery instructions, special requests..." {...register('notes')} />
+              <Label>Notes <span className="text-muted-foreground font-normal text-xs">(optional)</span></Label>
+              <Textarea rows={2} placeholder="Special instructions, delivery notes..." {...createForm.register('notes')} />
             </div>
 
-            {/* Total preview */}
             <div className="flex items-center justify-between py-2.5 px-3 rounded-lg bg-muted/50 border border-border">
               <span className="text-sm text-muted-foreground">Estimated Total</span>
               <span className="font-semibold font-mono text-base">${calcTotal().toFixed(2)}</span>
@@ -435,7 +525,7 @@ export default function OrdersPage() {
 
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button>
-              <Button type="submit" disabled={isSubmitting || createMutation.isPending} className="gap-1.5">
+              <Button type="submit" disabled={createForm.formState.isSubmitting || createMutation.isPending} className="gap-1.5">
                 <ShoppingCart className="w-4 h-4" /> Place Order
               </Button>
             </DialogFooter>
@@ -443,7 +533,77 @@ export default function OrdersPage() {
         </DialogContent>
       </Dialog>
 
-      {/* ─── Order Details Modal ────────────────────────────────────── */}
+      {/* ── Edit Order Modal ───────────────────────────────────────────────── */}
+      <Dialog open={!!editOrder} onOpenChange={(o) => !o && setEditOrder(null)}>
+        <DialogContent className="sm:max-w-2xl max-h-[92vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Edit Order <span className="text-muted-foreground font-mono text-sm">{editOrder?.orderNumber}</span></DialogTitle>
+          </DialogHeader>
+          <form onSubmit={editForm.handleSubmit((d) => editMutation.mutate(d as EditFormData))} className="space-y-5">
+
+            {/* Customer */}
+            <div className="space-y-3">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Customer Information</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label>Full Name <span className="text-destructive">*</span></Label>
+                  <div className="relative">
+                    <User className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+                    <Input className="pl-8 h-9" {...editForm.register('customerName')} />
+                  </div>
+                  {editForm.formState.errors.customerName && <p className="text-xs text-destructive">{editForm.formState.errors.customerName.message}</p>}
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Email</Label>
+                  <div className="relative">
+                    <Mail className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+                    <Input className="pl-8 h-9" type="email" {...editForm.register('customerEmail')} />
+                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Phone</Label>
+                  <div className="relative">
+                    <Phone className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+                    <Input className="pl-8 h-9" {...editForm.register('customerPhone')} />
+                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Delivery Address</Label>
+                  <div className="relative">
+                    <MapPin className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+                    <Input className="pl-8 h-9" {...editForm.register('customerAddress')} />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <Separator />
+            <AddressFields prefix="shippingAddress" register={editForm.register} label="Shipping Address" />
+
+            <div className="flex items-center gap-2">
+              <Checkbox id="edit-billing-same" checked={editBillingSame} onCheckedChange={(v) => setEditBillingSame(!!v)} />
+              <label htmlFor="edit-billing-same" className="text-sm text-muted-foreground cursor-pointer">Billing address same as shipping</label>
+            </div>
+            {!editBillingSame && <AddressFields prefix="billingAddress" register={editForm.register} label="Billing Address" />}
+
+            <Separator />
+
+            <div className="space-y-1.5">
+              <Label>Notes</Label>
+              <Textarea rows={2} {...editForm.register('notes')} />
+            </div>
+
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setEditOrder(null)}>Cancel</Button>
+              <Button type="submit" disabled={editForm.formState.isSubmitting || editMutation.isPending} className="gap-1.5">
+                <Pencil className="w-4 h-4" /> Save Changes
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Order Details Modal ────────────────────────────────────────────── */}
       <Dialog open={!!detailOrder} onOpenChange={(o) => !o && setDetailOrder(null)}>
         <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
@@ -458,49 +618,43 @@ export default function OrdersPage() {
           </DialogHeader>
           {detailOrder && (
             <div className="space-y-4 text-sm">
-
-              {/* Order meta */}
               <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <p className="text-xs text-muted-foreground">Order Number</p>
-                  <p className="font-mono text-xs mt-0.5">{detailOrder.orderNumber}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground">Date</p>
-                  <p className="mt-0.5">{new Date(detailOrder.createdAt).toLocaleDateString()}</p>
-                </div>
+                <div><p className="text-xs text-muted-foreground">Order Number</p><p className="font-mono text-xs mt-0.5">{detailOrder.orderNumber}</p></div>
+                <div><p className="text-xs text-muted-foreground">Date</p><p className="mt-0.5">{new Date(detailOrder.createdAt).toLocaleDateString()}</p></div>
               </div>
-
               <Separator />
 
-              {/* Customer info */}
+              {/* Customer */}
               <div>
                 <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Customer</p>
                 <div className="space-y-1.5">
-                  <div className="flex items-center gap-2">
-                    <User className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                    <span className="font-medium">{detailOrder.customerName}</span>
-                  </div>
-                  {detailOrder.customerEmail && (
-                    <div className="flex items-center gap-2">
-                      <Mail className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                      <span>{detailOrder.customerEmail}</span>
-                    </div>
-                  )}
-                  {detailOrder.customerPhone && (
-                    <div className="flex items-center gap-2">
-                      <Phone className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                      <span>{detailOrder.customerPhone}</span>
-                    </div>
-                  )}
-                  {detailOrder.customerAddress && (
-                    <div className="flex items-center gap-2">
-                      <MapPin className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                      <span>{detailOrder.customerAddress}</span>
-                    </div>
-                  )}
+                  <div className="flex items-center gap-2"><User className="w-3.5 h-3.5 text-muted-foreground shrink-0" /><span className="font-medium">{detailOrder.customerName}</span></div>
+                  {detailOrder.customerEmail   && <div className="flex items-center gap-2"><Mail  className="w-3.5 h-3.5 text-muted-foreground shrink-0" /><span>{detailOrder.customerEmail}</span></div>}
+                  {detailOrder.customerPhone   && <div className="flex items-center gap-2"><Phone  className="w-3.5 h-3.5 text-muted-foreground shrink-0" /><span>{detailOrder.customerPhone}</span></div>}
+                  {detailOrder.customerAddress && <div className="flex items-center gap-2"><MapPin className="w-3.5 h-3.5 text-muted-foreground shrink-0" /><span>{detailOrder.customerAddress}</span></div>}
                 </div>
               </div>
+
+              {/* Addresses */}
+              {(detailOrder.shippingAddress || detailOrder.billingAddress) && (
+                <>
+                  <Separator />
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    {detailOrder.shippingAddress && formatAddress(detailOrder.shippingAddress) && (
+                      <div>
+                        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">Shipping Address</p>
+                        <p className="text-sm leading-relaxed text-foreground">{formatAddress(detailOrder.shippingAddress)}</p>
+                      </div>
+                    )}
+                    {detailOrder.billingAddress && formatAddress(detailOrder.billingAddress) && (
+                      <div>
+                        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">Billing Address</p>
+                        <p className="text-sm leading-relaxed text-foreground">{formatAddress(detailOrder.billingAddress)}</p>
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
 
               <Separator />
 
@@ -510,10 +664,7 @@ export default function OrdersPage() {
                 <div className="space-y-1.5">
                   {detailOrder.items?.map((item: any) => (
                     <div key={item.id} className="flex justify-between">
-                      <span>
-                        {item.product?.name}
-                        <span className="text-muted-foreground ml-1">×{item.quantity}</span>
-                      </span>
+                      <span>{item.product?.name} <span className="text-muted-foreground">×{item.quantity}</span></span>
                       <span className="font-mono text-xs">${(item.quantity * Number(item.unitPrice)).toFixed(2)}</span>
                     </div>
                   ))}
@@ -526,15 +677,12 @@ export default function OrdersPage() {
               </div>
 
               {detailOrder.notes && (
-                <div>
-                  <p className="text-xs text-muted-foreground mb-0.5">Notes</p>
-                  <p className="text-sm">{detailOrder.notes}</p>
-                </div>
+                <div><p className="text-xs text-muted-foreground mb-0.5">Notes</p><p>{detailOrder.notes}</p></div>
               )}
 
               <Separator />
 
-              {/* Admin info */}
+              {/* Admin */}
               {detailOrder.user && (
                 <div>
                   <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">Processed By</p>
@@ -543,10 +691,8 @@ export default function OrdersPage() {
                       <User className="w-3.5 h-3.5 text-primary" />
                     </div>
                     <div>
-                      <p className="font-medium text-sm">{detailOrder.user.name}</p>
-                      {detailOrder.user.email && (
-                        <p className="text-xs text-muted-foreground">{detailOrder.user.email}</p>
-                      )}
+                      <p className="font-medium">{detailOrder.user.name}</p>
+                      {detailOrder.user.email && <p className="text-xs text-muted-foreground">{detailOrder.user.email}</p>}
                     </div>
                   </div>
                 </div>
@@ -556,15 +702,20 @@ export default function OrdersPage() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setDetailOrder(null)}>Close</Button>
             {detailOrder && (
-              <Button onClick={() => downloadInvoice(detailOrder)} className="gap-1.5">
-                <FileText className="w-4 h-4" /> Download Invoice
-              </Button>
+              <>
+                <Button variant="outline" onClick={() => { setDetailOrder(null); openEdit(detailOrder) }} className="gap-1.5">
+                  <Pencil className="w-4 h-4" /> Edit
+                </Button>
+                <Button onClick={() => downloadInvoice(detailOrder)} className="gap-1.5">
+                  <FileText className="w-4 h-4" /> Invoice
+                </Button>
+              </>
             )}
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* ─── Cancel Confirmation ─────────────────────────────────────── */}
+      {/* ── Cancel Confirmation ────────────────────────────────────────────── */}
       <AlertDialog open={!!cancelTarget} onOpenChange={(o) => !o && setCancelTarget(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -575,10 +726,8 @@ export default function OrdersPage() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Keep Order</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => cancelMutation.mutate(cancelTarget.id)}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            >
+            <AlertDialogAction onClick={() => cancelMutation.mutate(cancelTarget.id)}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
               Cancel Order
             </AlertDialogAction>
           </AlertDialogFooter>

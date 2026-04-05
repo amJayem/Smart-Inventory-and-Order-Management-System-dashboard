@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import { z } from 'zod'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { Loader2, Moon, Sun } from 'lucide-react'
+import { Loader2, Moon, Sun, Eye, EyeOff } from 'lucide-react'
 import { toast } from 'sonner'
 import api from '@/api/client'
 import { useAuthStore } from '@/store/auth.store'
@@ -36,6 +36,9 @@ export default function LoginPage() {
   const { theme, toggle } = useThemeStore()
   const [mode, setMode] = useState<'login' | 'register'>('login')
   const [demoLoading, setDemoLoading] = useState(false)
+  const [showLoginPw, setShowLoginPw] = useState(false)
+  const [showRegPw, setShowRegPw] = useState(false)
+  const [showRegConfirmPw, setShowRegConfirmPw] = useState(false)
 
   const loginForm = useForm<LoginData>({
     resolver: zodResolver(loginSchema),
@@ -177,12 +180,21 @@ export default function LoginPage() {
               </div>
               <div className="space-y-1.5">
                 <Label className="text-sm font-medium">Password</Label>
-                <Input
-                  type="password"
-                  placeholder="••••••••"
-                  className="h-10 text-sm"
-                  {...loginForm.register('password')}
-                />
+                <div className="relative">
+                  <Input
+                    type={showLoginPw ? 'text' : 'password'}
+                    placeholder="••••••••"
+                    className="h-10 text-sm pr-10"
+                    {...loginForm.register('password')}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowLoginPw((v) => !v)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    {showLoginPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
                 {loginForm.formState.errors.password && (
                   <p className="text-xs text-destructive">{loginForm.formState.errors.password.message}</p>
                 )}
@@ -226,24 +238,42 @@ export default function LoginPage() {
               </div>
               <div className="space-y-1.5">
                 <Label className="text-sm font-medium">Password</Label>
-                <Input
-                  type="password"
-                  placeholder="••••••••"
-                  className="h-10 text-sm"
-                  {...registerForm.register('password')}
-                />
+                <div className="relative">
+                  <Input
+                    type={showRegPw ? 'text' : 'password'}
+                    placeholder="••••••••"
+                    className="h-10 text-sm pr-10"
+                    {...registerForm.register('password')}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowRegPw((v) => !v)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    {showRegPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
                 {registerForm.formState.errors.password && (
                   <p className="text-xs text-destructive">{registerForm.formState.errors.password.message}</p>
                 )}
               </div>
               <div className="space-y-1.5">
                 <Label className="text-sm font-medium">Confirm Password</Label>
-                <Input
-                  type="password"
-                  placeholder="••••••••"
-                  className="h-10 text-sm"
-                  {...registerForm.register('confirmPassword')}
-                />
+                <div className="relative">
+                  <Input
+                    type={showRegConfirmPw ? 'text' : 'password'}
+                    placeholder="••••••••"
+                    className="h-10 text-sm pr-10"
+                    {...registerForm.register('confirmPassword')}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowRegConfirmPw((v) => !v)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    {showRegConfirmPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
                 {registerForm.formState.errors.confirmPassword && (
                   <p className="text-xs text-destructive">{registerForm.formState.errors.confirmPassword.message}</p>
                 )}
